@@ -18,8 +18,57 @@ from fpdf import FPDF
 # Configuration
 # ---------------------------------------------------------------------------
 
-START_DATE = date(2026, 1, 31)
-END_DATE   = date(2026, 1, 31)
+DATES_LIST = [
+    date(2026, 1, 8),
+    date(2026, 1, 16),
+    date(2026, 1, 17),
+    date(2026, 1, 21),
+    date(2026, 1, 22),
+    date(2026, 1, 29),
+    date(2026, 1, 31),
+    date(2026, 2, 4),
+    date(2026, 2, 7),
+    date(2026, 2, 10),
+    date(2026, 2, 11),
+    date(2026, 2, 13),
+    date(2026, 2, 21),
+    date(2026, 2, 25),
+    date(2026, 2, 28),
+    date(2026, 3, 5),
+    date(2026, 3, 12),
+    date(2026, 3, 13),
+    date(2026, 3, 17),
+    date(2026, 3, 19),
+    date(2026, 3, 20),
+    date(2026, 3, 21),
+    date(2026, 3, 24),
+    date(2026, 3, 27),
+    date(2026, 4, 7),
+    date(2026, 4, 9),
+    date(2026, 4, 10),
+    date(2026, 4, 15),
+    date(2026, 4, 16),
+    date(2026, 4, 17),
+    date(2026, 4, 18),
+    date(2026, 4, 23),
+    date(2026, 4, 28),
+    date(2026, 4, 29),
+    date(2026, 4, 30),
+    date(2026, 5, 1),
+    date(2026, 5, 9),
+    date(2026, 5, 12),
+    date(2026, 5, 15),
+    date(2026, 5, 16),
+    date(2026, 5, 20),
+    date(2026, 5, 23),
+    date(2026, 5, 26),
+    date(2026, 5, 28),
+    date(2026, 5, 30),
+    date(2026, 6, 3),
+]
+
+#START_DATE = date(2026, 2, 28)
+#END_DATE   = date(2026, 2, 28)
 
 URL_TEMPLATE = (
     "https://cepebr-prod.s3.amazonaws.com/1/cadernos/"
@@ -106,13 +155,12 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
         res["Cargo"] = cargo_match.group(1).strip()
         res["Cargo"] = re.split(r"\s+s[íi]mbolo", res["Cargo"], flags=re.IGNORECASE)[0].strip()
         
-    # Extração de Símbolo simplificada
-    simbolo_match = re.search(r"s[íi]mbolo\s*[-:]?\s*([A-Z0-9/a-z-]+)", ato_text, re.IGNORECASE)
+    simbolo_match = re.search(r"s[íi]mbolo\s*[-:]?\s*([A-Z0-9/a-z]+\s*-\s*\d+|[A-Z0-9/a-z-]+)", ato_text, re.IGNORECASE)
     if simbolo_match:
-        res["Símbolo"] = simbolo_match.group(1).strip()
+        res["Símbolo"] = simbolo_match.group(1).replace(" ", "").strip()
         
-    # Extração de Órgão por palavras-chave institucionais com delimitador inteligente de parada
-    orgao_keywords = r"(Secretaria|Empresa|Instituto|Universidade|Conservatório|Fundação|Tribunal|Casa|Procuradoria|Agência|Companhia|Defensoria|Polícia|Vice-Governadoria|Governadoria|Departamento|Programa|Distrito)"
+    # Extração de Órgão com a inclusão de "Junta"
+    orgao_keywords = r"(Secretaria|Empresa|Instituto|Universidade|Conservatório|Fundação|Tribunal|Casa|Procuradoria|Agência|Companhia|Defensoria|Polícia|Vice-Governadoria|Governadoria|Departamento|Programa|Distrito|Junta|Conselho)"
     orgao_match = re.search(r"\b" + orgao_keywords + r"\b.+?(?=(?:,\s*(?:da\s+|do\s+)?com\s+efeito|,\s*a\s+partir|,\s*s[íi]mbolo|,\s*matr[ií]cula|,\s*para|,\s*no\s+per[ií]odo|,\s*em\s+gozo|\.|$))", ato_text, re.IGNORECASE)
     if orgao_match:
         res["Órgão"] = orgao_match.group(0).strip()
@@ -188,7 +236,7 @@ def main():
         writer = csv.writer(csv_file, quoting=csv.QUOTE_ALL)
         writer.writerow(["Data", "Número", "Ato", "Nome", "Cargo", "Símbolo", "Órgão"])
         
-        for d in iter_dates(START_DATE, END_DATE):
+        for d in DATES_LIST:
             log.info(f"Buscando PDF da data: {d}...")
             pdf_bytes = download_pdf(build_url(d))
             if not pdf_bytes:

@@ -18,8 +18,8 @@ from fpdf import FPDF
 # Configuration
 # ---------------------------------------------------------------------------
 
-START_DATE = date(2023, 1, 1)
-END_DATE   = date(2023, 1, 20)
+START_DATE = date(2026, 1, 31)
+END_DATE   = date(2026, 1, 31)
 
 URL_TEMPLATE = (
     "https://cepebr-prod.s3.amazonaws.com/1/cadernos/"
@@ -52,13 +52,15 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def clean_excerpt(raw_text: str) -> str:
+    """Filtra o texto bruto para o TXT original."""
     header_match = re.search(r"(ATOS DO DIA[\s\S]*?RESOLVE:)", raw_text, re.IGNORECASE)
     header = header_match.group(1).strip() if header_match else "ATOS DO DIA"
-    atos_encontrados = re.findall(r"(Nº\s*\d+[\s\S]*?\.\s)", raw_text)
+    atos_encontrados = re.findall(r"(Nº\s*\d+[\s\S]*?(?=(?:Nº\s*\d+|$)))", raw_text, re.IGNORECASE)
     atos_limpos = [re.sub(r'\s+', ' ', ato).strip() for ato in atos_encontrados]
     return header + "\n\n" + "\n\n".join(atos_limpos)
 
 def parse_ato(ato_text: str, date_obj: date) -> dict:
+    """Aplica as regras de negócio para fatiar o texto de um ato individual para o CSV."""
     ato_text = re.sub(r'\s+', ' ', ato_text).strip()
     
     res = {
@@ -76,7 +78,6 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
         res["Número"] = num_match.group(1).strip()
         end_num = num_match.end()
         
-        # Identifica a primeira palavra útil do ato
         ato_match = re.search(r"^[-\s–—,:]*([A-Za-zÀ-ÿ]+)", ato_text[end_num:])
         if ato_match:
             res["Ato"] = ato_match.group(1).strip()
@@ -85,70 +86,41 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
             ato_word_pos = ato_text.find(res["Ato"], end_num)
             remainder = ato_text[ato_word_pos + len(res["Ato"]):].strip()
             
-            # Limpeza de prefixos legais para isolar o Nome (ex: ", a pedido,")
-            temp_name = re.sub(r"^,\s*a pedido\s*,?", "", remainder, flags=re.IGNORECASE).strip()
-            temp_name = re.sub(r"^,\s*nos termos.*?Estadual,\s*", "", temp_name, flags=re.IGNORECASE).strip()
-            
-            if ato_lower in ["nomear", "designar", "reintegrar", "exonerar", "dispensar"]:
-                # Remove pronomes/títulos no início
-                temp_name = re.sub(r"^(o\s+servidor|a\s+servidora|o\s+Promotor\s+de\s+Justiça)\s+", "", temp_name, flags=re.IGNORECASE)
+            # Isolamento e extração robusta do Nome baseado em delimitadores finais
+            if ato_lower not in ["tornar", "retificar"]:
+                delim_pattern = r"(,?\s*matr[ií]cula|\s+para\s+exercer|\s+para\s+o\s+cargo|\s+do\s+cargo|\s+da\s+Fun[çc]ãO|\s+de\s+Fun[çc]ãO|,\s*na\s+qualidade|\s+para\s+participar|,\s*sem\s+ônus|,\s*com\s+ônus|\s+da\s+Empresa|\s+do\s+Departamento|\s+da\s+Secretaria|\bda\b|\bdo\b)"
+                parts = re.split(delim_pattern, remainder, maxsplit=1, flags=re.IGNORECASE)
+                name_phrase = parts[0].strip()
                 
-                # Procura a primeira quebra natural que encerra o nome
-                delimitadores = [r",\s*matrícula", r"\s+para\s+o\s+cargo", r",\s*para", 
-                                 r"\s+para\s+exercer", r"\s+ao\s+cargo", r"\s+do\s+cargo", 
-                                 r"\s+da\s+Função", r",\s*da\s+Universidade", r","]
+                if "," in name_phrase:
+                    sub_parts = [p.strip() for p in name_phrase.split(",") if p.strip()]
+                    if sub_parts:
+                        name_phrase = sub_parts[-1]
                 
-                for delim in delimitadores:
-                    m = re.search(delim, temp_name, re.IGNORECASE)
-                    if m:
-                        temp_name = temp_name[:m.start()].strip()
-                        break
-                res["Nome"] = temp_name
-                
-            elif ato_lower == "autorizar":
-                serv_match = re.search(r"servidor[a-z]*\s+([^,:]+)", remainder, re.IGNORECASE)
-                if serv_match:
-                    nome_bruto = serv_match.group(1).strip()
-                    res["Nome"] = re.split(r",\s*abaixo relacionados", nome_bruto, flags=re.IGNORECASE)[0].strip()
-                else:
-                    res["Nome"] = temp_name.split(",")[0].strip()
+                name_phrase = re.sub(r"^(o\s+servidor|a\s+servidora|o\s+Promotor\s+de\s+Justi[çc]a|de\s+|a\s+)\s*", "", name_phrase, flags=re.IGNORECASE).strip()
+                res["Nome"] = name_phrase
 
-            elif ato_lower == "delegar":
-                p_a = re.search(r"\s+a\s+", remainder, re.IGNORECASE)
-                if p_a:
-                    start_name = p_a.end()
-                    p_comma = remainder.find(",", start_name)
-                    res["Nome"] = remainder[start_name:p_comma].strip() if p_comma != -1 else remainder[start_name:].strip()
-                    
-            elif ato_lower == "transferir":
-                p_comma1 = remainder.find(",")
-                if p_comma1 != -1:
-                    p_comma2 = remainder.find(",", p_comma1 + 1)
-                    res["Nome"] = remainder[p_comma1 + 1:p_comma2].strip() if p_comma2 != -1 else remainder[p_comma1 + 1:].strip()
-            
-            elif ato_lower in ["tornar", "retificar"]:
-                res["Nome"] = remainder.strip()
-
-    # Busca cargo incluindo "Função Gratificada"
-    cargo_match = re.search(r"(?:comissão de|cargo de|Função Gratificada de)\s+([^,]+)", ato_text, re.IGNORECASE)
+    # Extração de Cargo adaptada para estruturas compostas e variações
+    cargo_match = re.search(r"(?:comiss[ão]o de|comiss[ão]o|cargo de|cargo em comiss[ão](?:\s+de)?|Fun[çc]ãO Gratificada de|responder pelo expediente da|responder pelo expediente do|compor o)\s+([^,]+)", ato_text, re.IGNORECASE)
     if cargo_match:
         res["Cargo"] = cargo_match.group(1).strip()
+        res["Cargo"] = re.split(r"\s+s[íi]mbolo", res["Cargo"], flags=re.IGNORECASE)[0].strip()
         
-    simbolo_match = re.search(r"s[íi]mbolo\s+([^,]+)", ato_text, re.IGNORECASE)
+    # Extração de Símbolo simplificada
+    simbolo_match = re.search(r"s[íi]mbolo\s*[-:]?\s*([A-Z0-9/a-z-]+)", ato_text, re.IGNORECASE)
     if simbolo_match:
         res["Símbolo"] = simbolo_match.group(1).strip()
         
-    efeito_idx = ato_text.lower().find("com efeito")
-    if efeito_idx != -1:
-        comma1_idx = ato_text.rfind(",", 0, efeito_idx)
-        if comma1_idx != -1:
-            comma2_idx = ato_text.rfind(",", 0, comma1_idx)
-            res["Órgão"] = ato_text[comma2_idx + 1:comma1_idx].strip() if comma2_idx != -1 else ato_text[:comma1_idx].strip()
+    # Extração de Órgão por palavras-chave institucionais com delimitador inteligente de parada
+    orgao_keywords = r"(Secretaria|Empresa|Instituto|Universidade|Conservatório|Fundação|Tribunal|Casa|Procuradoria|Agência|Companhia|Defensoria|Polícia|Vice-Governadoria|Governadoria|Departamento|Programa|Distrito)"
+    orgao_match = re.search(r"\b" + orgao_keywords + r"\b.+?(?=(?:,\s*(?:da\s+|do\s+)?com\s+efeito|,\s*a\s+partir|,\s*s[íi]mbolo|,\s*matr[ií]cula|,\s*para|,\s*no\s+per[ií]odo|,\s*em\s+gozo|\.|$))", ato_text, re.IGNORECASE)
+    if orgao_match:
+        res["Órgão"] = orgao_match.group(0).strip()
             
     return res
 
 # ---------------------------------------------------------------------------
-# Helpers e Main permanecem sem alterações
+# Helpers
 # ---------------------------------------------------------------------------
 
 def build_url(d: date) -> str:
@@ -204,6 +176,10 @@ def generate_pdf(txt_path: Path, pdf_path: Path):
             pdf.multi_cell(190, 5, linha_segura.rstrip())
     pdf.output(str(pdf_path))
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main():
     with (
         OUTPUT_CSV.open("w", newline="", encoding="utf-8") as csv_file,
@@ -227,7 +203,7 @@ def main():
                 txt_file.write(f"DATE: {d} | EXCERPT #{i}\n{'-'*80}\n{excerpt}\n\n")
                 txt_file.flush()
                 
-                atos_encontrados = re.findall(r"(Nº\s*\d+[\s\S]*?\.\s)", raw_excerpt)
+                atos_encontrados = re.findall(r"(Nº\s*\d+[\s\S]*?(?=(?:Nº\s*\d+|$)))", raw_excerpt, re.IGNORECASE)
                 for ato_raw in atos_encontrados:
                     parsed = parse_ato(ato_raw, d)
                     writer.writerow([
@@ -244,6 +220,7 @@ def main():
 
     generate_pdf(OUTPUT_TXT, OUTPUT_PDF)
     log.info("Processamento concluído.")
+
 
 if __name__ == "__main__":
     main()

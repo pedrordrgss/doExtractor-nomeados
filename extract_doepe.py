@@ -17,7 +17,7 @@ from fpdf import FPDF
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-
+'''
 DATES_LIST = [
     date(2026, 1, 8),
     date(2026, 1, 16),
@@ -66,9 +66,12 @@ DATES_LIST = [
     date(2026, 5, 30),
     date(2026, 6, 3),
 ]
+'''
+START_DATE = date(2026, 3, 27)
+END_DATE   = date(2026, 3, 27)
 
-#START_DATE = date(2026, 2, 28)
-#END_DATE   = date(2026, 2, 28)
+# Lista de Atos desejados (ex: ["Nomear", "Exonerar"]). Deixe vazia [] para extrair todos.
+ATOS_FILTER = ["Nomear"]
 
 URL_TEMPLATE = (
     "https://cepebr-prod.s3.amazonaws.com/1/cadernos/"
@@ -110,8 +113,13 @@ def clean_excerpt(raw_text: str) -> str:
 
 def parse_ato(ato_text: str, date_obj: date) -> dict:
     """Aplica as regras de negócio para fatiar o texto de um ato individual para o CSV."""
-    ato_text = re.sub(r'\s+', ' ', ato_text).strip()
+    # Corrige erros de aglutinação comuns do texto original
+    ato_text = re.sub(r'peloexpediente', 'pelo expediente', ato_text, flags=re.IGNORECASE)
     
+    # Remove espaços extras e junta palavras separadas por hífen de quebra de linha
+    ato_text = re.sub(r'\s+', ' ', ato_text).strip()
+    ato_text = re.sub(r'([A-Za-zÀ-ÿ])- ([A-Za-zÀ-ÿ])', r'\1\2', ato_text)
+
     res = {
         "Data": date_obj.strftime("%d/%m/%Y"),
         "Número": "",
@@ -165,6 +173,11 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
     if orgao_match:
         res["Órgão"] = orgao_match.group(0).strip()
             
+    # Se o símbolo for exclusivamente "DAS", o Órgão recebe o mesmo valor do Cargo
+    if res["Símbolo"] == "DAS":
+        res["Órgão"] = res["Cargo"]
+        
+    
     return res
 
 # ---------------------------------------------------------------------------
@@ -236,7 +249,8 @@ def main():
         writer = csv.writer(csv_file, quoting=csv.QUOTE_ALL)
         writer.writerow(["Data", "Número", "Ato", "Nome", "Cargo", "Símbolo", "Órgão"])
         
-        for d in DATES_LIST:
+        for d in iter_dates(START_DATE, END_DATE):
+        #for d in DATES_LIST:
             log.info(f"Buscando PDF da data: {d}...")
             pdf_bytes = download_pdf(build_url(d))
             if not pdf_bytes:
@@ -254,6 +268,8 @@ def main():
                 atos_encontrados = re.findall(r"(Nº\s*\d+[\s\S]*?(?=(?:Nº\s*\d+|$)))", raw_excerpt, re.IGNORECASE)
                 for ato_raw in atos_encontrados:
                     parsed = parse_ato(ato_raw, d)
+                    if ATOS_FILTER and parsed["Ato"].strip().lower() not in [a.lower() for a in ATOS_FILTER]:
+                        continue
                     writer.writerow([
                         parsed["Data"],
                         parsed["Número"],

@@ -17,7 +17,7 @@ from fpdf import FPDF
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-
+"""
 DATES_LIST = [
     date(2026, 1, 8),
     date(2026, 1, 16),
@@ -66,12 +66,12 @@ DATES_LIST = [
     date(2026, 5, 30),
     date(2026, 6, 3),
 ]
-
-#START_DATE = date(2026, 4, 28)
-#END_DATE   = date(2026, 4, 28)
+"""
+START_DATE = date(2026, 1, 8)
+END_DATE   = date(2026, 1, 8)
 
 # Lista de Atos desejados (ex: ["Nomear", "Exonerar", "Designar", "Autorizar", "Cassar", "Conceder", "Concedo", "Converter", "Declarar", "Demitir", "Dispensar", "Exonerar", "Homologar", "Promover", "Prorrogar", "Reconduzir", "Submeter", "Transferir", "Tornar", etc]). Deixe vazia [] para extrair todos.
-ATOS_FILTER = ["Nomear", "Exonerar"]
+ATOS_FILTER = ["Designar"]
 
 URL_TEMPLATE = (
     "https://cepebr-prod.s3.amazonaws.com/1/cadernos/"
@@ -107,7 +107,7 @@ def clean_excerpt(raw_text: str) -> str:
     """Filtra o texto bruto para o TXT original."""
     header_match = re.search(r"(ATOS DO DIA[\s\S]*?RESOLVE:)", raw_text, re.IGNORECASE)
     header = header_match.group(1).strip() if header_match else "ATOS DO DIA"
-    atos_encontrados = re.findall(r"(Nº\s*\d+[\s\S]*?(?=(?:Nº\s*\d+|$)))", raw_text, re.IGNORECASE)
+    atos_encontrados = re.findall(r"(Nº\s*\d+\s*[-–—][\s\S]*?(?=(?:Nº\s*\d+\s*[-–—]|$)))", raw_text, re.IGNORECASE)
     atos_limpos = [re.sub(r'\s+', ' ', ato).strip() for ato in atos_encontrados]
     return header + "\n\n" + "\n\n".join(atos_limpos)
 
@@ -115,7 +115,8 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
     """Aplica as regras de negócio para fatiar o texto de um ato individual para o CSV."""
     # Corrige erros de aglutinação comuns do texto original
     ato_text = re.sub(r'peloexpediente', 'pelo expediente', ato_text, flags=re.IGNORECASE)
-    
+    # Separa preposições coladas nos nomes dos órgãos (ex: "daSecretaria" -> "da Secretaria")
+    ato_text = re.sub(r'(da|do|de)(Secretaria|Empresa|Instituto|Universidade|Conservatório|Fundação|Tribunal|Casa|Procuradoria|Agência|Companhia|Defensoria|Polícia|Vice-?Governadoria|Governadoria|Departamento|Programa|Distrito|Junta|Conselho|Gabinete)', r'\1 \2', ato_text, flags=re.IGNORECASE)
     # Protege o hífen de palavras compostas ANTES da limpeza geral
     ato_text = re.sub(r'(Vice)-\s+(Governadoria)', r'\1-\2', ato_text, flags=re.IGNORECASE)
 
@@ -160,12 +161,12 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
                     if sub_parts:
                         name_phrase = sub_parts[-1]
                 
-                name_phrase = re.sub(r"^(o\s+servidor|a\s+servidora|o\s+Promotor\s+de\s+Justi[çc]a|de\s+|a\s+)\s*", "", name_phrase, flags=re.IGNORECASE).strip()
+               # Limpeza de prefixos antes do Nome, agora com suporte a Defensores Públicos
+                name_phrase = re.sub(r"^(o\s+servidor|a\s+servidora|o\s+Promotor\s+de\s+Justi[çc]a|o\s+Defensor\s+P[úu]blico|a\s+Defensora\s+P[úu]blica|de\s+|a\s+)\s*", "", name_phrase, flags=re.IGNORECASE).strip() 
                 res["Nome"] = name_phrase
 
-    # Extração de Cargo adaptada para tolerar vírgulas inesperadas (ex: "cargo em comissão, de")
-    # Extração de Cargo reformulada para aceitar livremente espaços, vírgulas e preposições
-    cargo_match = re.search(r"(?:cargo em comiss[ão]|cargo de|comiss[ão]o|Fun[çc]ãO Gratificada de|responder pelo expediente d[ao]|compor o)[\s,]+(?:de\s+)?([^,]+)", ato_text, re.IGNORECASE)
+    # Extração de Cargo imune a fragmentações, incluindo a variação "atividade de"
+    cargo_match = re.search(r"(?:comiss[^,]*?,?\s*de|cargo[\s,]+de|atividade[\s,]+de|fun[^,]*?grati[^,]*?,?\s*de|expediente\s+d[ao]|compor\s+o)\s+([^,]+)", ato_text, re.IGNORECASE)
     if cargo_match:
         res["Cargo"] = cargo_match.group(1).strip()
         res["Cargo"] = re.split(r"\s+s[íi]mbolo", res["Cargo"], flags=re.IGNORECASE)[0].strip()
@@ -267,8 +268,8 @@ def main():
         writer = csv.writer(csv_file, quoting=csv.QUOTE_ALL)
         writer.writerow(["Data", "Número", "Ato", "Nome", "Cargo", "Símbolo", "Órgão"])
         
-        #for d in iter_dates(START_DATE, END_DATE):
-        for d in DATES_LIST:
+        for d in iter_dates(START_DATE, END_DATE):
+        #for d in DATES_LIST:
             log.info(f"Buscando PDF da data: {d}...")
             pdf_bytes = download_pdf(build_url(d))
             if not pdf_bytes:
@@ -283,7 +284,7 @@ def main():
                 txt_file.write(f"DATE: {d} | EXCERPT #{i}\n{'-'*80}\n{excerpt}\n\n")
                 txt_file.flush()
                 
-                atos_encontrados = re.findall(r"(Nº\s*\d+[\s\S]*?(?=(?:Nº\s*\d+|$)))", raw_excerpt, re.IGNORECASE)
+                atos_encontrados = re.findall(r"(Nº\s*\d+\s*[-–—][\s\S]*?(?=(?:Nº\s*\d+\s*[-–—]|$)))", raw_excerpt, re.IGNORECASE)
                 for ato_raw in atos_encontrados:
                     parsed = parse_ato(ato_raw, d)
                     if ATOS_FILTER and parsed["Ato"].strip().lower() not in [a.lower() for a in ATOS_FILTER]:

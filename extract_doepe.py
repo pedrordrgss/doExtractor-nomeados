@@ -67,8 +67,8 @@ DATES_LIST = [
     date(2026, 6, 3),
 ]
 '''
-START_DATE = date(2026, 3, 27)
-END_DATE   = date(2026, 3, 27)
+START_DATE = date(2026, 4, 28)
+END_DATE   = date(2026, 4, 28)
 
 # Lista de Atos desejados (ex: ["Nomear", "Exonerar"]). Deixe vazia [] para extrair todos.
 ATOS_FILTER = ["Nomear"]
@@ -162,16 +162,27 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
     if cargo_match:
         res["Cargo"] = cargo_match.group(1).strip()
         res["Cargo"] = re.split(r"\s+s[íi]mbolo", res["Cargo"], flags=re.IGNORECASE)[0].strip()
-        
+
+    # Extração de Símbolo com captura do índice final    
     simbolo_match = re.search(r"s[íi]mbolo\s*[-:]?\s*([A-Z0-9/a-z]+\s*-\s*\d+|[A-Z0-9/a-z-]+)", ato_text, re.IGNORECASE)
+    simbolo_end = 0
     if simbolo_match:
         res["Símbolo"] = simbolo_match.group(1).replace(" ", "").strip()
+        simbolo_end = simbolo_match.end()
         
     # Extração de Órgão com a inclusão de "Junta"
-    orgao_keywords = r"(Secretaria|Empresa|Instituto|Universidade|Conservatório|Fundação|Tribunal|Casa|Procuradoria|Agência|Companhia|Defensoria|Polícia|Vice-Governadoria|Governadoria|Departamento|Programa|Distrito|Junta|Conselho)"
-    orgao_match = re.search(r"\b" + orgao_keywords + r"\b.+?(?=(?:,\s*(?:da\s+|do\s+)?com\s+efeito|,\s*a\s+partir|,\s*s[íi]mbolo|,\s*matr[ií]cula|,\s*para|,\s*no\s+per[ií]odo|,\s*em\s+gozo|\.|$))", ato_text, re.IGNORECASE)
+    orgao_keywords = r"(Secretaria|Empresa|Instituto|Universidade|Conservatório|Fundação|Tribunal|Casa|Procuradoria|Agência|Companhia|Defensoria|Polícia|Vice-Governadoria|Governadoria|Departamento|Programa|Distrito|Junta|Conselho|Gabinete)"
+    # Define de onde começar a busca do órgão
+    text_for_orgao = ato_text[simbolo_end:] if simbolo_end > 0 else ato_text
+    orgao_match = re.search(r"\b" + orgao_keywords + r"\b.*?(?=(?:,\s*(?:da\s+|do\s+)?com\s+efeito|,\s*a\s+partir|,\s*s[íi]mbolo|,\s*matr[ií]cula|,\s*para|,\s*no\s+per[ií]odo|,\s*em\s+gozo|\.|$))", text_for_orgao, re.IGNORECASE)
+    
     if orgao_match:
         res["Órgão"] = orgao_match.group(0).strip()
+    elif simbolo_end > 0:
+        # Fallback de segurança buscando no texto inteiro
+        orgao_match_fallback = re.search(r"\b" + orgao_keywords + r"\b.*?(?=(?:,\s*(?:da\s+|do\s+)?com\s+efeito|,\s*a\s+partir|,\s*s[íi]mbolo|,\s*matr[ií]cula|,\s*para|,\s*no\s+per[ií]odo|,\s*em\s+gozo|\.|$))", ato_text, re.IGNORECASE)
+        if orgao_match_fallback:
+            res["Órgão"] = orgao_match_fallback.group(0).strip()
             
     # Se o símbolo for exclusivamente "DAS", o Órgão recebe o mesmo valor do Cargo
     if res["Símbolo"] == "DAS":

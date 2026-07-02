@@ -182,13 +182,13 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
     orgao_keywords = r"(Secretaria|Empresa|Instituto|Universidade|Conservatório|Fundação|Tribunal|Casa|Procuradoria|Agência|Companhia|Defensoria|Polícia|Vice-Governadoria|Governadoria|Departamento|Programa|Distrito|Junta|Conselho|Gabinete)"
     # Define de onde começar a busca do órgão
     text_for_orgao = ato_text[simbolo_end:] if simbolo_end > 0 else ato_text
-    orgao_match = re.search(r"\b" + orgao_keywords + r"\b.*?(?=(?:,\s*(?:da\s+|do\s+)?com\s+efeito|,\s*a\s+partir|,\s*s[íi]mbolo|,\s*matr[ií]cula|,\s*para|,\s*no\s+per[ií]odo|,\s*em\s+gozo|\.|$))", text_for_orgao, re.IGNORECASE)
     
+    orgao_match = re.search(r"\b" + orgao_keywords + r"\b.*?(?=(?:,?\s*(?:da\s+|do\s+)?com\s+efeito|,\s*a\s+partir|,\s*s[íi]mbolo|,\s*matr[ií]cula|,\s*para|,\s*no\s+per[ií]odo|,\s*em\s+gozo|\.|$))", text_for_orgao, re.IGNORECASE)
     if orgao_match:
         res["Órgão"] = orgao_match.group(0).strip()
     elif simbolo_end > 0:
         # Fallback de segurança buscando no texto inteiro
-        orgao_match_fallback = re.search(r"\b" + orgao_keywords + r"\b.*?(?=(?:,\s*(?:da\s+|do\s+)?com\s+efeito|,\s*a\s+partir|,\s*s[íi]mbolo|,\s*matr[ií]cula|,\s*para|,\s*no\s+per[ií]odo|,\s*em\s+gozo|\.|$))", ato_text, re.IGNORECASE)
+        orgao_match_fallback = re.search(r"\b" + orgao_keywords + r"\b.*?(?=(?:,?\s*(?:da\s+|do\s+)?com\s+efeito|,\s*a\s+partir|,\s*s[íi]mbolo|,\s*matr[ií]cula|,\s*para|,\s*no\s+per[ií]odo|,\s*em\s+gozo|\.|$))", ato_text, re.IGNORECASE)
         if orgao_match_fallback:
             res["Órgão"] = orgao_match_fallback.group(0).strip()
             

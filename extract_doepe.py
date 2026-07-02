@@ -67,11 +67,11 @@ DATES_LIST = [
     date(2026, 6, 3),
 ]
 
-#START_DATE = date(2026, 3, 27)
-#END_DATE   = date(2026, 3, 27)
+#START_DATE = date(2026, 4, 28)
+#END_DATE   = date(2026, 4, 28)
 
-# Lista de Atos desejados (ex: ["Nomear", "Exonera", "Designar", "Autorizar", "Cassar", "Conceder", "Concedo", "Converter", "Declarar", "Demitir", "Dispensar", "Exonerar", "Homologar", "Promover", "Prorrogar", "Reconduzir", "Submeter", "Transferir", "Tornar", etc]). Deixe vazia [] para extrair todos.
-ATOS_FILTER = ["Exonerar"]
+# Lista de Atos desejados (ex: ["Nomear", "Exonerar", "Designar", "Autorizar", "Cassar", "Conceder", "Concedo", "Converter", "Declarar", "Demitir", "Dispensar", "Exonerar", "Homologar", "Promover", "Prorrogar", "Reconduzir", "Submeter", "Transferir", "Tornar", etc]). Deixe vazia [] para extrair todos.
+ATOS_FILTER = ["Nomear", "Exonerar"]
 
 URL_TEMPLATE = (
     "https://cepebr-prod.s3.amazonaws.com/1/cadernos/"
@@ -150,7 +150,8 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
             
             # Isolamento e extração robusta do Nome baseado em delimitadores finais
             if ato_lower not in ["tornar", "retificar"]:
-                delim_pattern = r"(,?\s*matr[ií]cula|\s+para\s+exercer|\s+para\s+o\s+cargo|\s+do\s+cargo|\s+da\s+Fun[çc]ãO|\s+de\s+Fun[çc]ãO|,\s*na\s+qualidade|\s+para\s+participar|,\s*sem\s+ônus|,\s*com\s+ônus|\s+da\s+Empresa|\s+do\s+Departamento|\s+da\s+Secretaria|\bda\b|\bdo\b)"
+                # Isolamento e extração do Nome corrigido (sem quebra em partículas como 'da/do')
+                delim_pattern = r"(,?\s*matr[ií]cula|\s+para\s+exercer|\s+para\s+o\s+cargo|\s+do\s+cargo|\s+da\s+Fun[çc]ãO|\s+de\s+Fun[çc]ãO|,\s*na\s+qualidade|\s+para\s+participar|,\s*sem\s+ônus|,\s*com\s+ônus|\s+da\s+Empresa|\s+do\s+Departamento|\s+da\s+Secretaria)"
                 parts = re.split(delim_pattern, remainder, maxsplit=1, flags=re.IGNORECASE)
                 name_phrase = parts[0].strip()
                 
@@ -162,8 +163,9 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
                 name_phrase = re.sub(r"^(o\s+servidor|a\s+servidora|o\s+Promotor\s+de\s+Justi[çc]a|de\s+|a\s+)\s*", "", name_phrase, flags=re.IGNORECASE).strip()
                 res["Nome"] = name_phrase
 
-    # Extração de Cargo adaptada para estruturas compostas e variações
-    cargo_match = re.search(r"(?:comiss[ão]o de|comiss[ão]o|cargo de|cargo em comiss[ão](?:\s+de)?|Fun[çc]ãO Gratificada de|responder pelo expediente da|responder pelo expediente do|compor o)\s+([^,]+)", ato_text, re.IGNORECASE)
+    # Extração de Cargo adaptada para tolerar vírgulas inesperadas (ex: "cargo em comissão, de")
+    # Extração de Cargo reformulada para aceitar livremente espaços, vírgulas e preposições
+    cargo_match = re.search(r"(?:cargo em comiss[ão]|cargo de|comiss[ão]o|Fun[çc]ãO Gratificada de|responder pelo expediente d[ao]|compor o)[\s,]+(?:de\s+)?([^,]+)", ato_text, re.IGNORECASE)
     if cargo_match:
         res["Cargo"] = cargo_match.group(1).strip()
         res["Cargo"] = re.split(r"\s+s[íi]mbolo", res["Cargo"], flags=re.IGNORECASE)[0].strip()

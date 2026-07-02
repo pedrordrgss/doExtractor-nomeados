@@ -17,7 +17,7 @@ from fpdf import FPDF
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-'''
+
 DATES_LIST = [
     date(2026, 1, 8),
     date(2026, 1, 16),
@@ -66,12 +66,12 @@ DATES_LIST = [
     date(2026, 5, 30),
     date(2026, 6, 3),
 ]
-'''
-START_DATE = date(2026, 4, 28)
-END_DATE   = date(2026, 4, 28)
 
-# Lista de Atos desejados (ex: ["Nomear", "Exonerar"]). Deixe vazia [] para extrair todos.
-ATOS_FILTER = ["Nomear"]
+#START_DATE = date(2026, 3, 27)
+#END_DATE   = date(2026, 3, 27)
+
+# Lista de Atos desejados (ex: ["Nomear", "Exonera", "Designar", "Autorizar", "Cassar", "Conceder", "Concedo", "Converter", "Declarar", "Demitir", "Dispensar", "Exonerar", "Homologar", "Promover", "Prorrogar", "Reconduzir", "Submeter", "Transferir", "Tornar", etc]). Deixe vazia [] para extrair todos.
+ATOS_FILTER = ["Exonerar"]
 
 URL_TEMPLATE = (
     "https://cepebr-prod.s3.amazonaws.com/1/cadernos/"
@@ -116,9 +116,14 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
     # Corrige erros de aglutinação comuns do texto original
     ato_text = re.sub(r'peloexpediente', 'pelo expediente', ato_text, flags=re.IGNORECASE)
     
-    # Remove espaços extras e junta palavras separadas por hífen de quebra de linha
+    # Protege o hífen de palavras compostas ANTES da limpeza geral
+    ato_text = re.sub(r'(Vice)-\s+(Governadoria)', r'\1-\2', ato_text, flags=re.IGNORECASE)
+
+    # Remove espaços extras e junta palavras separadas por hífen de quebra de linha (ex: "Se- cretaria")
     ato_text = re.sub(r'\s+', ' ', ato_text).strip()
     ato_text = re.sub(r'([A-Za-zÀ-ÿ])- ([A-Za-zÀ-ÿ])', r'\1\2', ato_text)
+
+
 
     res = {
         "Data": date_obj.strftime("%d/%m/%Y"),
@@ -260,8 +265,8 @@ def main():
         writer = csv.writer(csv_file, quoting=csv.QUOTE_ALL)
         writer.writerow(["Data", "Número", "Ato", "Nome", "Cargo", "Símbolo", "Órgão"])
         
-        for d in iter_dates(START_DATE, END_DATE):
-        #for d in DATES_LIST:
+        #for d in iter_dates(START_DATE, END_DATE):
+        for d in DATES_LIST:
             log.info(f"Buscando PDF da data: {d}...")
             pdf_bytes = download_pdf(build_url(d))
             if not pdf_bytes:

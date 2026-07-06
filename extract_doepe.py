@@ -17,7 +17,8 @@ from fpdf import FPDF
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-"""
+
+
 DATES_LIST = [
     date(2026, 1, 8),
     date(2026, 1, 16),
@@ -66,9 +67,9 @@ DATES_LIST = [
     date(2026, 5, 30),
     date(2026, 6, 3),
 ]
-"""
-START_DATE = date(2026, 1, 8)
-END_DATE   = date(2026, 1, 8)
+
+#START_DATE = date(2026, 1, 16)
+#END_DATE   = date(2026, 1, 16)
 
 # Lista de Atos desejados (ex: ["Nomear", "Exonerar", "Designar", "Autorizar", "Cassar", "Conceder", "Concedo", "Converter", "Declarar", "Demitir", "Dispensar", "Exonerar", "Homologar", "Promover", "Prorrogar", "Reconduzir", "Submeter", "Transferir", "Tornar", etc]). Deixe vazia [] para extrair todos.
 ATOS_FILTER = ["Designar"]
@@ -107,7 +108,7 @@ def clean_excerpt(raw_text: str) -> str:
     """Filtra o texto bruto para o TXT original."""
     header_match = re.search(r"(ATOS DO DIA[\s\S]*?RESOLVE:)", raw_text, re.IGNORECASE)
     header = header_match.group(1).strip() if header_match else "ATOS DO DIA"
-    atos_encontrados = re.findall(r"(Nº\s*\d+\s*[-–—][\s\S]*?(?=(?:Nº\s*\d+\s*[-–—]|$)))", raw_text, re.IGNORECASE)
+    atos_encontrados = re.findall(r"(Nº\s*\d+\s*[-–—]\s*[A-Za-zÀ-ÿ][\s\S]*?(?=(?:Nº\s*\d+\s*[-–—]\s*[A-Za-zÀ-ÿ]|$)))", raw_text, re.IGNORECASE)
     atos_limpos = [re.sub(r'\s+', ' ', ato).strip() for ato in atos_encontrados]
     return header + "\n\n" + "\n\n".join(atos_limpos)
 
@@ -152,7 +153,8 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
             # Isolamento e extração robusta do Nome baseado em delimitadores finais
             if ato_lower not in ["tornar", "retificar"]:
                 # Isolamento e extração do Nome corrigido (sem quebra em partículas como 'da/do')
-                delim_pattern = r"(,?\s*matr[ií]cula|\s+para\s+exercer|\s+para\s+o\s+cargo|\s+do\s+cargo|\s+da\s+Fun[çc]ãO|\s+de\s+Fun[çc]ãO|,\s*na\s+qualidade|\s+para\s+participar|,\s*sem\s+ônus|,\s*com\s+ônus|\s+da\s+Empresa|\s+do\s+Departamento|\s+da\s+Secretaria)"
+                # Isolamento e extração robusta do Nome baseado em delimitadores finais
+                delim_pattern = r"(,?\s*matr[ií]cula|\s+para\s+exercer|\s+para\s+responder|,\s*Secret[áa]ri[oa]|\s+para\s+o\s+cargo|\s+do\s+cargo|\s+da\s+Fun[çc]ãO|\s+de\s+Fun[çc]ãO|,\s*na\s+qualidade|\s+para\s+participar|,\s*sem\s+ônus|,\s*com\s+ônus|\s+da\s+Empresa|\s+do\s+Departamento|\s+da\s+Secretaria)"
                 parts = re.split(delim_pattern, remainder, maxsplit=1, flags=re.IGNORECASE)
                 name_phrase = parts[0].strip()
                 
@@ -165,8 +167,8 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
                 name_phrase = re.sub(r"^(o\s+servidor|a\s+servidora|o\s+Promotor\s+de\s+Justi[çc]a|o\s+Defensor\s+P[úu]blico|a\s+Defensora\s+P[úu]blica|de\s+|a\s+)\s*", "", name_phrase, flags=re.IGNORECASE).strip() 
                 res["Nome"] = name_phrase
 
-    # Extração de Cargo imune a fragmentações, incluindo a variação "atividade de"
-    cargo_match = re.search(r"(?:comiss[^,]*?,?\s*de|cargo[\s,]+de|atividade[\s,]+de|fun[^,]*?grati[^,]*?,?\s*de|expediente\s+d[ao]|compor\s+o)\s+([^,]+)", ato_text, re.IGNORECASE)
+    # Extração de Cargo adaptada para aceitar apenas "função de" (sem "gratificada")
+    cargo_match = re.search(r"(?:comiss[^,]*?,?\s*de|cargo[\s,]+de|atividade[\s,]+de|fun[^,]*?grati[^,]*?,?\s*de|fun[çc][ãa]o[\s,]+de|expediente\s*d[ao]|compor\s+o)[\s,]*([^,]+)", ato_text, re.IGNORECASE)
     if cargo_match:
         res["Cargo"] = cargo_match.group(1).strip()
         res["Cargo"] = re.split(r"\s+s[íi]mbolo", res["Cargo"], flags=re.IGNORECASE)[0].strip()
@@ -178,8 +180,8 @@ def parse_ato(ato_text: str, date_obj: date) -> dict:
         res["Símbolo"] = simbolo_match.group(1).replace(" ", "").strip()
         simbolo_end = simbolo_match.end()
         
-    # Extração de Órgão com a inclusão de "Junta"
-    orgao_keywords = r"(Secretaria|Empresa|Instituto|Universidade|Conservatório|Fundação|Tribunal|Casa|Procuradoria|Agência|Companhia|Defensoria|Polícia|Vice-Governadoria|Governadoria|Departamento|Programa|Distrito|Junta|Conselho|Gabinete)"
+    # Extração de Órgão com suporte a erro de digitação em "Secretária"
+    orgao_keywords = r"(Secret[áa]ria|Empresa|Instituto|Universidade|Conservatório|Fundação|Tribunal|Casa|Procuradoria|Agência|Companhia|Defensoria|Polícia|Vice-?Governadoria|Governadoria|Departamento|Programa|Distrito|Junta|Conselho|Gabinete|Escola|Gerência)"
     # Define de onde começar a busca do órgão
     text_for_orgao = ato_text[simbolo_end:] if simbolo_end > 0 else ato_text
     
@@ -268,8 +270,8 @@ def main():
         writer = csv.writer(csv_file, quoting=csv.QUOTE_ALL)
         writer.writerow(["Data", "Número", "Ato", "Nome", "Cargo", "Símbolo", "Órgão"])
         
-        for d in iter_dates(START_DATE, END_DATE):
-        #for d in DATES_LIST:
+        #for d in iter_dates(START_DATE, END_DATE):
+        for d in DATES_LIST:
             log.info(f"Buscando PDF da data: {d}...")
             pdf_bytes = download_pdf(build_url(d))
             if not pdf_bytes:
@@ -284,7 +286,7 @@ def main():
                 txt_file.write(f"DATE: {d} | EXCERPT #{i}\n{'-'*80}\n{excerpt}\n\n")
                 txt_file.flush()
                 
-                atos_encontrados = re.findall(r"(Nº\s*\d+\s*[-–—][\s\S]*?(?=(?:Nº\s*\d+\s*[-–—]|$)))", raw_excerpt, re.IGNORECASE)
+                atos_encontrados = re.findall(r"(Nº\s*\d+\s*[-–—]\s*[A-Za-zÀ-ÿ][\s\S]*?(?=(?:Nº\s*\d+\s*[-–—]\s*[A-Za-zÀ-ÿ]|$)))", raw_excerpt, re.IGNORECASE)
                 for ato_raw in atos_encontrados:
                     parsed = parse_ato(ato_raw, d)
                     if ATOS_FILTER and parsed["Ato"].strip().lower() not in [a.lower() for a in ATOS_FILTER]:
